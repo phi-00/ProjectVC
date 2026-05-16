@@ -132,7 +132,162 @@ The model was designed to balance:
     \item Classification accuracy.
 \end{itemize}
 
-\section{Data Augmentation Strategies \red{TODO}}
+\section{Data Augmentation Strategies}
+Data augmentation is a key technique to improve the generalization ability of deep learning models, especially in image classification tasks such as traffic sign recognition. In this work, multiple augmentation strategies were systematically designed and evaluated using the GTSRB dataset.
+
+The main objective was to analyze how different transformations affect model robustness and accuracy under real-world variations such as rotation, illumination changes, occlusions, and perspective distortion.
+
+All experiments follow a controlled evaluation protocol using the same CNN architecture, optimizer (Adam), and training configuration, varying only the augmentation pipeline.
+
+\subsection{Experiment 0 - Baseline}
+
+The baseline experiment uses only minimal preprocessing, without any augmentation applied to the training data. This serves as the reference for all subsequent comparisons.
+
+\begin{lstlisting}[language=Python]
+results_base, mean_base, std_base = run_experiment(
+    name='baseline',
+    transform_train=transform_base,
+    transform_test=transform_base
+)
+\end{lstlisting}
+
+\subsection{Experiment 1 - Geometric Augmentation}
+
+This experiment introduces basic geometric transformations, aiming to improve invariance to small spatial changes such as rotation and translation.
+
+\begin{lstlisting}[language=Python]
+transform_geo = v2.Compose([
+    v2.RandomRotation(15, interpolation=v2.
+    InterpolationMode.BILINEAR),
+    v2.Resize((IMG_SIZE, IMG_SIZE)),
+    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True)
+])
+\end{lstlisting}
+
+These transformations simulate small camera shifts and orientation changes commonly found in real driving scenarios.
+
+\subsection{Experiment 2 - Advanced Geometric Augmentation}
+
+A more aggressive geometric pipeline was introduced using perspective distortion and random cropping. This aims to simulate more extreme viewpoint variations.
+
+\begin{lstlisting}[language=Python]
+transform_geo2 = v2.Compose([
+    v2.RandomPerspective(distortion_scale=0.2, p=0.6),
+    v2.Resize((IMG_SIZE + 8, IMG_SIZE + 8)),
+    v2.RandomCrop((IMG_SIZE, IMG_SIZE)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True)
+])
+\end{lstlisting}
+
+This setup introduces stronger spatial variability while maintaining the semantic structure of traffic signs.
+
+\subsection{Experiment 3 - Color Augmentation}
+
+This experiment focuses on photometric transformations to improve robustness to lighting conditions, shadows, and weather variations.
+
+\begin{lstlisting}[language=Python]
+transform_color = v2.Compose([
+    v2.Resize((IMG_SIZE, IMG_SIZE)),
+    v2.ColorJitter(
+        brightness=0.5,
+        contrast=0.5,
+        saturation=0.3,
+        hue=0.05
+    ),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True)
+])
+\end{lstlisting}
+
+Color jittering is particularly relevant for real-world driving scenarios where illumination is highly variable.
+
+\subsection{Experiment 4 - Combined Augmentation}
+
+This experiment combines geometric and color augmentations, along with random erasing to simulate occlusions such as dirt, shadows, or partial obstruction.
+
+\begin{lstlisting}[language=Python]
+transform_combined = v2.Compose([
+    v2.RandomRotation(15, interpolation=v2.
+    InterpolationMode.BILINEAR),
+    v2.Resize((IMG_SIZE, IMG_SIZE)),
+    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    v2.ColorJitter(
+        brightness=0.5,
+        contrast=0.5,
+        saturation=0.3,
+        hue=0.05
+    ),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.RandomErasing(
+        p=0.3,
+        scale=(0.02, 0.1),
+        value='random'
+    )
+])
+\end{lstlisting}
+
+Random erasing improves robustness by forcing the network to learn partial-feature representations.
+
+\subsection{Experiment 5 - Massive Dataset Expansion}
+
+This experiment significantly increases dataset diversity by duplicating the training dataset with a strongly augmented version. The final dataset is a concatenation of original and augmented samples.
+
+\begin{lstlisting}[language=Python]
+full_original  = torchvision.datasets.ImageFolder(
+    root=PATH_TRAIN,
+    transform=transform_base
+)
+
+full_augmented = torchvision.datasets.ImageFolder(
+    root=PATH_TRAIN,
+    transform=transform_strong
+)
+
+expanded_dataset = torch.utils.data.ConcatDataset(
+    [full_original, full_augmented]
+)
+\end{lstlisting}
+
+This strategy effectively doubles the dataset size, improving generalization capacity.
+
+The model is trained multiple times with different random initializations to ensure statistical reliability:
+
+\begin{lstlisting}[language=Python]
+for i in range(RUNS):
+    model = Conv_II(NUM_CLASSES).to(device)
+    ...
+    train(...)
+    acc = evaluate(model, test_loader)
+\end{lstlisting}
+
+This setup also includes:
+\begin{itemize}
+    \item Learning rate scheduling (ReduceLROnPlateau);
+    \item Early stopping;
+    \item Model checkpointing.
+\end{itemize}
+
+\subsection{Experiment 6 - MixUp Augmentation}
+
+This experiment uses MixUp, a data augmentation technique that generates synthetic training samples by interpolating pairs of images and their labels.
+
+\begin{lstlisting}[language=Python]
+mixup = v2.MixUp(num_classes=NUM_CLASSES)
+
+inputs, targets_mix = mixup(inputs, targets)
+outputs = model(inputs)
+loss = loss_fn(outputs, targets_mix)
+\end{lstlisting}
+
+Unlike standard training, MixUp produces soft labels, improving decision boundaries and reducing overfitting.
+
+During evaluation, standard validation is performed without MixUp to ensure fair performance measurement.
+
+
 
 \section{Experimental Results \red{TODO} }
 
@@ -159,8 +314,6 @@ The best average test accuracy obtained during Phase 1 was:
 \]
 
 Although this result is below the state-of-the-art benchmark (99.82\%), it demonstrates that augmentation strategies positively impact model robustness and generalization.
-
-\red{\section{Challenges and Limitations?}}
 
 \section{Conclusion}
 
