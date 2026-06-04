@@ -24,7 +24,7 @@
 \maketitle
 
 \begin{abstract}
-This report presents the first phase of a deep learning project focused on traffic sign recognition using the German Traffic Sign Recognition Benchmark (GTSRB) dataset. The main objective of this phase was to study the impact of different data augmentation techniques and image preprocessing strategies on the performance of convolutional neural networks (CNNs). Several augmentation configurations were evaluated, including geometric transformations, color-based augmentations, combined augmentations, and massive dataset expansion. Experimental results demonstrate that data augmentation significantly improves model generalization and robustness, achieving a maximum average test accuracy of approximately 98.38\%.
+This report presents a deep learning project focused on traffic sign recognition using the German Traffic Sign Recognition Benchmark (GTSRB) dataset. The main objective was to study the impact of different data augmentation techniques, image preprocessing strategies and ensemble learning techniqueson the performance of convolutional neural networks (CNNs). Several augmentation configurations were evaluated, including geometric transformations, color-based augmentations, combined augmentations, massive dataset expansion and MixUp, followed by the construction of ensembles using Soft Voting and Hard Voting methods. Experimental results demonstrate that data augmentation significantly improves model generalization and robustness, while ensemble learning enhances... \red{TO FINISH}
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -129,11 +129,15 @@ This architecture was designed to balance computational efficiency and classific
 
 \subsection{VGG16}
 
-The second architecture corresponds to the classical VGG16 model trained from scratch on the GTSRB dataset.
+The second architecture evaluated was VGG16. In this configuration, the network was initialized without pretrained weights and trained directly on the GTSRB dataset. The original classifier was replaced with a custom classification head composed of a fully connected layer with 256 neurons, a ReLU activation function, a dropout layer with a rate of 0.5, and a final output layer corresponding to the 43 traffic sign classes.
+
+For this architecture, images were resized to a dedicated input resolution and normalized before being fed to the network. The objective was to evaluate the performance of a deeper architecture when trained exclusively on the available traffic sign data.
 
 \subsection{VGG16 with Transfer Learning}
 
-A third model was obtained using transfer learning from ImageNet-pretrained VGG16 weights. Feature extraction layers were frozen and only the classifier layers were retrained on the traffic sign dataset.
+A second VGG16-based approach was implemented using transfer learning. In this configuration, the network was initialized with pretrained weights, and all feature extraction layers were frozen during training. The original classifier was replaced by the same custom classification head used in the previous experiment, consisting of a fully connected layer with 256 neurons, ReLU activation, dropout regularization, and a final classification layer with 43 outputs.
+
+Only the classifier layers were updated during training, while the pretrained feature extraction layers remained unchanged. This approach was evaluated to determine whether reusing previously learned visual representations could improve classification performance on the GTSRB dataset.
 
 \subsection{Training Strategy}
 
@@ -165,6 +169,8 @@ All experiments follow a controlled evaluation protocol using the same CNN archi
 The baseline experiment uses only minimal preprocessing, without any augmentation applied to the training data. This serves as the reference for all subsequent comparisons.
 
 \begin{lstlisting}[language=Python]
+    t_base = transform_base_vgg if model_name in ('vgg16',
+    'vgg16_tl') else transform_base
     _, mean, std = run_experiment(
         name='baseline',
         transform_train=t_base,
@@ -187,6 +193,18 @@ transform_geo = v2.Compose([
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True)
 ])
+
+transform_geo_vgg = v2.Compose([
+    v2.RandomRotation(15, interpolation=v2.
+    InterpolationMode.BILINEAR),
+    v2.Resize((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
+])
+
 \end{lstlisting}
 
 These transformations simulate small camera shifts and orientation changes commonly found in real driving scenarios.
@@ -203,6 +221,16 @@ transform_geo2 = v2.Compose([
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True)
 ])
+
+transform_geo2_vgg = v2.Compose([
+    v2.RandomPerspective(distortion_scale=0.2, p=0.6),
+    v2.Resize((IMG_SIZE_VGG +8, IMG_SIZE_VGG +8)),
+    v2.RandomCrop((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
+])
 \end{lstlisting}
 
 This setup introduces stronger spatial variability while maintaining the semantic structure of traffic signs.
@@ -218,6 +246,16 @@ transform_color = v2.Compose([
     saturation=0.3, hue=0.05),
     v2.ToImage(),
     v2.ToDtype(torch.float32, scale=True)
+])
+
+transform_color_vgg = v2.Compose([
+    v2.Resize((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.ColorJitter(brightness=0.5, contrast=0.5,
+    saturation=0.3, hue=0.05),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
 ])
 \end{lstlisting}
 
@@ -240,6 +278,21 @@ transform_combined = v2.Compose([
     v2.RandomErasing(p=0.3, scale=(0.02, 0.1),
     value='random')
 ])
+
+transform_combined_vgg = v2.Compose([
+    v2.RandomRotation(15, interpolation=v2.
+    InterpolationMode.BILINEAR),
+    v2.Resize((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    v2.ColorJitter(brightness=0.5, contrast=0.5,
+    saturation=0.3, hue=0.05),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.RandomErasing(p=0.3, scale=(0.02, 0.1),
+    value='random'),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
+])
 \end{lstlisting}
 
 Random erasing improves robustness by forcing the network to learn partial-feature representations.
@@ -261,6 +314,21 @@ transform_strong = v2.Compose([
     v2.RandomErasing(p=0.3, scale=(0.02, 0.1),
     value='random')
 ])
+
+transform_strong_vgg = v2.Compose([
+    v2.RandomRotation(20, interpolation=v2.
+    InterpolationMode.BILINEAR),
+    v2.Resize((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+    v2.ColorJitter(brightness=0.5, contrast=0.5,
+    saturation=0.3, hue=0.05),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.RandomErasing(p=0.3, scale=(0.02, 0.1),
+    value='random'),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
+])
 \end{lstlisting}
 
 This strategy effectively doubles the dataset size, improving generalization capacity.
@@ -271,6 +339,8 @@ The model is trained multiple times with different random initializations to ens
 for i in range(RUNS):
         if model_name == 'conv_II':
             model = Conv_II(NUM_CLASSES).to(device)
+        elif model_name == 'vgg16':
+            model = torchvision.models.vgg16()
             ...
             train(...)
     acc = evaluate(model, test_loader)
@@ -283,20 +353,39 @@ This setup also includes:
     \item Model checkpointing.
 \end{itemize}
 
-\subsection{Experiment 6 - MixUp Augmentation}
+\subsection{Experiment 6 - MixUp and CutMix Augmentation}
 
-This experiment uses MixUp, a data augmentation technique that generates synthetic training samples by interpolating pairs of images and their labels.
+This experiment evaluates the impact of advanced data augmentation techniques, specifically MixUp and CutMix, on model generalization. Both methods generate synthetic training samples to improve robustness and reduce overfitting.
+
+MixUp creates new training examples by linearly interpolating pairs of images and their corresponding labels, producing soft labels that encourage smoother decision boundaries. Meanwhile, CutMix improves augmentation diversity by replacing a random patch of one image with a patch from another image, while adjusting the labels proportionally to the area of the patch.
 
 \begin{lstlisting}[language=Python]
     mixup = v2.MixUp(num_classes=NUM_CLASSES)
     history = {'loss': [], 'accuracy': [],
     'val_loss': [], 'val_acc': []}
     best_val_loss = np.inf
+
+    ...
+
+    transform_mix = v2.Compose([
+    v2.Resize((IMG_SIZE_CONV, IMG_SIZE_CONV)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+])
+
+    transform_mix_vgg = v2.Compose([
+    v2.Resize((IMG_SIZE_VGG, IMG_SIZE_VGG)),
+    v2.ToImage(),
+    v2.ToDtype(torch.float32, scale=True),
+    v2.Normalize([0.485, 0.456, 0.406],
+    [0.229, 0.224, 0.225])
+])
+
 \end{lstlisting}
 
-Unlike standard training, MixUp produces soft labels, improving decision boundaries and reducing overfitting.
+Unlike standard training, MixUp produces soft labels, improving decision boundaries and reducing overfitting. CutMix (when applied) similarly acts as a regularization technique by enforcing the model to learn from partial image regions and mixed labels.
 
-During evaluation, standard validation is performed without MixUp to ensure fair performance measurement.
+During evaluation, standard validation is performed without MixUp or CutMix to ensure fair performance measurement.
 
 \section{Phase 1 Results and Discussion}
 
@@ -315,7 +404,7 @@ Several observations can be highlighted:
 
 \item Massive dataset expansion consistently produced some of the strongest results, indicating that increasing sample diversity is highly beneficial for traffic sign recognition.
 
-\item MixUp regularization improved generalization by encouraging smoother class boundaries and reducing overfitting.
+\item MixUp and CutMix regularization improved generalization by encouraging smoother class boundaries and reducing overfitting.
 
 \end{itemize}
 
@@ -329,50 +418,22 @@ The objective of Phase 2 was therefore to evaluate whether combining models trai
 
 \subsection{Ensemble Construction}
 
-For each augmentation strategy, the models obtained from different training runs were combined into an ensemble.
+In the second phase of the project, ensemble learning techniques were explored to evaluate whether combining multiple trained models could improve classification performance.
 
-Let
+For each augmentation strategy, several models obtained from independent training runs were grouped into an ensemble. Since each model may learn slightly different decision boundaries due to random initialization and training dynamics, combining their predictions can reduce variance and improve robustness.
 
-\[
-M = \{m_1, m_2, \dots, m_n\}
-\]
-
-represent the set of trained models.
-
-Two ensemble aggregation methods were investigated.
+Two ensemble approaches were evaluated: Soft Voting and Hard Voting.
 
 \subsection{Soft Voting}
 
-In Soft Voting, the posterior probabilities predicted by all models are averaged.
-
-Given a class $c$, the ensemble probability is computed as
-
-\[
-P(c) = \frac{1}{n}\sum_{i=1}^{n} P_i(c),
-\]
-
-where $P_i(c)$ is the probability assigned by model $m_i$.
-
-The final prediction corresponds to the class with maximum averaged probability.
-
-Soft Voting exploits confidence information from all classifiers and is generally expected to provide better performance when the individual models are well calibrated.
+In the Soft Voting approach, the output scores produced by each model are combined, and the final prediction is determined by the class receiving the highest overall score. This method takes into account the confidence of each model and is often more effective when the individual classifiers provide reliable probability estimates.
 
 \subsection{Hard Voting}
 
-In Hard Voting, each model independently predicts a class label.
+In the Hard Voting approach, each model independently predicts a class label. The final prediction is then obtained through majority voting, where the class receiving the largest number of votes is selected.
 
-The final prediction is obtained through majority voting:
+Unlike Soft Voting, this method only considers the final decision of each model and ignores the confidence associated with the predictions.
 
-\[
-\hat{y} =
-\operatorname*{arg\,max}_{c}
-\sum_{i=1}^{n}
-\mathbf{1}(y_i=c),
-\]
-
-where $y_i$ is the prediction of model $m_i$.
-
-This strategy ignores confidence scores and only considers final class decisions.
 
 \subsection{Experimental Evaluation}
 Ensembles were evaluated for every augmentation strategy explored in Phase 1:
