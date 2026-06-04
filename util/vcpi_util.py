@@ -77,16 +77,35 @@ def show_histogram(data, classes):
     plt.show()   
 
 
-def show_confusion_matrix(ground_truth, preds, num_classes):    
+def show_confusion_matrix(ground_truth, preds, num_classes):
 
     cf_matrix = confusion_matrix(ground_truth, preds)
 
+    cm_norm = cf_matrix / np.sum(cf_matrix, axis=1)[:, None]
 
-    df_cm = pd.DataFrame(cf_matrix / np.sum(cf_matrix, axis=1)[:, None], range(num_classes), range(num_classes))
-    plt.figure(figsize=(12,6))
+    df_cm = pd.DataFrame(
+        cm_norm,
+        index=range(num_classes),
+        columns=range(num_classes)
+    )
 
-    sn.heatmap(df_cm, annot=True, annot_kws={"size": 10} , fmt='.3f') # font size
+    annot = np.full(df_cm.shape, "", dtype=object)
 
+    for i in range(num_classes):
+        annot[i, i] = f"{cm_norm[i, i]:.3f}"
+
+    plt.figure(figsize=(12, 8))
+
+    sn.heatmap(
+        df_cm,
+        annot=annot,
+        fmt="",
+        cmap="rocket",
+        annot_kws={"size": 10}
+    )
+
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
     plt.show()
     
 
